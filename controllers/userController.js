@@ -192,7 +192,10 @@ export const signup = async (req, res) => {
           delete userObj.password; // Remove password field
   
           // Generate JWT token
-          const token = generateToken({userId: userObj._id});
+          
+          const token = generateToken({
+            userId: user._id,
+          });
   
           // Set token in an HTTP-only cookie (Secure, SameSite=strict to prevent CSRF attacks)
           res.cookie('token', token, {
