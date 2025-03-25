@@ -4,6 +4,7 @@ import User from "../models/User.js";
 import { errorResponse, successResponse } from "../utils/response.js";
 import { generateToken } from "../utils/jwt.js";
 import mongoose from "mongoose";
+import Chat from "../models/Chat.js"; // Add this import at the top with other imports
 
 export const signup = async (req, res) => {
     try {
@@ -158,63 +159,64 @@ export const signup = async (req, res) => {
       return errorResponse(res, "Error verifying OTP.", err.message, 500);
     }
   };
+
+  export const login = async (req, res) => {
+      try {
+          const { email, password } = req.body;
   
- export const login = async (req, res) => {
-    try {
-      const { email, password } = req.body;
+          if (!email || !password) {
+              return errorResponse(res, "VALIDATION_ERROR", "Email and password are required.", 400);
+          }
   
-      if (!email || !password) {
-        return errorResponse(
-          res,
-          "VALIDATION_ERROR",
-          "email and password are required.",
-          400
-        );
+          const user = await User.findOne({ email });
+  
+          if (!user) {
+              return errorResponse(res, "USER_NOT_FOUND", "No user found with the given email.", 404);
+          }
+  
+          if (!user.otpVerified) {
+              return errorResponse(res, "OTP_NOT_VERIFIED", "Please verify your OTP first.", 403);
+          }
+  
+          // Check if password matches
+          const passwordMatch = await bcrypt.compare(password, user.password);
+          if (!passwordMatch) {
+              return errorResponse(res, "INVALID_CREDENTIALS", "Wrong password.", 400);
+          }
+  
+          // Create a new chat document for the user
+          const chatDocument = new Chat({ userId: user._id });
+          await chatDocument.save();
+  
+          const userObj = user.toObject();
+          delete userObj.password; // Remove password field
+  
+          // Generate JWT token
+          const token = generateToken({userId: userObj._id});
+  
+          // Set token in an HTTP-only cookie (Secure, SameSite=strict to prevent CSRF attacks)
+          res.cookie('token', token, {
+              httpOnly: true,
+              secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+              sameSite: 'strict',
+              maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+          });
+  
+          return successResponse(res, "LOGIN_SUCCESS", { 
+              user: {
+                  _id: user._id,
+                  fullName: user.name,
+                  email: user.email,
+                  chatId: chatDocument._id,
+              }
+          }, 200);
+  
+      } catch (error) {
+          console.error(error);
+          return errorResponse(res, "SERVER_ERROR", "Internal server error", 500);
       }
-  
-      
-      const user = await User.findOne({email:email});
-  
-      if (!user) {
-        return errorResponse(
-          res,
-          "USER_NOT_FOUND",
-          "No user found with the given identifier.",
-          404
-        );
-      }
-  
-      if (!user.otpVerified) {
-        return errorResponse(
-          res,
-          "OTP_NOT_VERIFIED",
-          "Please verify your OTP first.",
-          403
-        );
-      }
-  
-    
-  
-      // Check if password matches
-      const passwordMatch = await bcrypt.compare(password, user.password);
-      if (!passwordMatch) {
-        return errorResponse(res, "INVALID_CREDENTIALS", "Wrong password.", 400);
-      }
-      const userObj = user.toObject();
-      delete userObj.password; // remove password field
-  
-      // Generate JWT token
-      const token = generateToken({
-        userId: user._id,
-      });
-      delete userObj.tokenVersion;
-  
-      return successResponse(res, "LOGIN_SUCCESS", { userObj, token }, 200);
-    } catch (error) {
-      console.error(error);
-      return errorResponse(res, "SERVER_ERROR", "Internal server error", 500);
-    }
   };
+  
 
   export const forgotPassword = async (req, res) => {
     try {
@@ -335,3 +337,24 @@ export  const resetPassword = async (req, res) => {
       return errorResponse(res, "SERVER_ERROR", "Internal server error", 500);
     }
   };
+
+
+export const newChat = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        
+        const chatDocument = new Chat({
+            userId: userId,
+        });
+        
+        await chatDocument.save();
+
+        return successResponse(res, "New chat created", {
+            chatId: chatDocument._id
+        });
+
+    } catch (error) {
+        console.error(error);
+        return errorResponse(res, "SERVER_ERROR", "Error creating new chat", 500);
+    }
+};

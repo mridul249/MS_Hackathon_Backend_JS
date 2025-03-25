@@ -1,6 +1,7 @@
 import express from 'express';
 const router = express.Router();
-import {login, signup, verifyOTP, resendOtpHandler, forgotPassword, verifyResetPasswordOTP, resetPassword }  from '../controllers/userController.js';
+import {login, signup, verifyOTP, resendOtpHandler, forgotPassword, verifyResetPasswordOTP, resetPassword, newChat }  from '../controllers/userController.js';
+import authMiddleware from '../middlewares/authMiddleware.js';
 router.post('/signup', signup);
 router.post('/verify-otp', verifyOTP);
 router.post('/resend-otp', resendOtpHandler);
@@ -8,4 +9,5 @@ router.post('/login', login);
 router.post('/forgotPassword',forgotPassword);
 router.post('/verifyResetPasswordOTP',verifyResetPasswordOTP);
 router.post('/resetPassword',resetPassword);
+router.post('/newChat',authMiddleware,newChat);
 export default router;
