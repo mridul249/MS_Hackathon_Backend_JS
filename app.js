@@ -24,18 +24,18 @@ let mongoClient = null;
 
 /**
  * Load the feature extraction pipeline once, when the server starts.
- * Disable quantization by passing { quantized: false }.
+ * Here, we switch to a lighter model that supports quantization.
  */
 async function loadModel() {
-  console.log("Loading the feature extraction model (all-mpnet-base-v2)...");
-  featureExtractionPipeline = await pipeline(
-    "feature-extraction",
-    "sentence-transformers/all-mpnet-base-v2",
-    { quantized: false }
-  );
-  console.log("Model loaded.");
-}
-
+    console.log("Loading the feature extraction model (Alibaba-NLP/gte-base-en-v1.5)...");
+    featureExtractionPipeline = await pipeline(
+      "feature-extraction",
+      "Alibaba-NLP/gte-base-en-v1.5",
+      { quantized: false } // You can adjust this flag if a quantized version becomes available
+    );
+    console.log("Model loaded.");
+  }
+  
 /**
  * Connect to the MongoDB database and assign the global client.
  */
