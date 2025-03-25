@@ -1,0 +1,11 @@
+import express from 'express';
+const router = express.Router();
+import {login, signup, verifyOTP, resendOtpHandler, forgotPassword, verifyResetPasswordOTP, resetPassword }  from '../controllers/userController.js';
+router.post('/signup', signup);
+router.post('/verify-otp', verifyOTP);
+router.post('/resend-otp', resendOtpHandler);
+router.post('/login', login);
+router.post('/forgotPassword',forgotPassword);
+router.post('/verifyResetPasswordOTP',verifyResetPasswordOTP);
+router.post('/resetPassword',resetPassword);
+export default router;

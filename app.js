@@ -2,8 +2,9 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
-import { MongoClient } from 'mongodb';
+import mongoose from 'mongoose';
 import { pipeline } from '@xenova/transformers';
+import userRoutes from './routes/userRoutes.js';
 
 const app = express();
 app.use(express.json());
@@ -15,6 +16,7 @@ const DB_NAME = process.env.DB_NAME;
 const COLLECTION_NAME = process.env.COLLECTION_NAME;
 const SEARCH_INDEX_NAME = process.env.SEARCH_INDEX_NAME;
 
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const AZURE_API_KEY = process.env.AZURE_API_KEY;
 const GPT4_ENDPOINT = process.env.GPT4_ENDPOINT;
 
@@ -40,10 +42,18 @@ async function loadModel() {
  * Connect to the MongoDB database and assign the global client.
  */
 async function connectDB() {
-  console.log("Connecting to MongoDB...");
-  mongoClient = new MongoClient(MONGODB_URI);
-  await mongoClient.connect();
-  console.log("Connected to MongoDB.");
+  try {
+    console.log("Connecting to MongoDB...");
+    await mongoose.connect(process.env.MONGODB_URI, {
+      dbName: process.env.DB_NAME, // Use dbName here instead of separate MongoClient
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    console.log("Connected to MongoDB.");
+  } catch (error) {
+    console.error("MongoDB Connection Error:", error);
+    process.exit(1);
+  }
 }
 
 /**
@@ -68,13 +78,26 @@ function averagePool(embeddings) {
  * Get an embedding for a given text using the in-memory model.
  */
 async function getEmbedding(text) {
-  // 'featureExtractionPipeline' is loaded once at startup.
-  const output = await featureExtractionPipeline(text);
-  // For sentence-transformers, pool token embeddings into a single vector:
-  if (Array.isArray(output) && Array.isArray(output[0])) {
-    return averagePool(output);
+  try {
+    const response = await axios.post(
+      'https://api.openai.com/v1/embeddings',
+      {
+        input: text,
+        model: 'text-embedding-ada-002'
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${OPENAI_API_KEY}`
+        }
+      }
+    );
+    // Return the first embedding vector from the response.
+    return response.data.data[0].embedding;
+  } catch (error) {
+    console.error("Error generating embedding:", error.response ? error.response.data : error.message);
+    throw error;
   }
-  return output;
 }
 
 /**
@@ -107,13 +130,12 @@ async function callGPT4(messages) {
  * Perform a vector search in MongoDB using Atlas Search's $search stage.
  */
 async function searchMongo(queryEmbedding) {
-  const db = mongoClient.db(DB_NAME);
-  const collection = db.collection(COLLECTION_NAME);
+  const collection = mongoose.connection.db.collection(process.env.COLLECTION_NAME);
 
   const pipelineAgg = [
     {
       $search: {
-        index: SEARCH_INDEX_NAME,
+        index: process.env.SEARCH_INDEX_NAME,
         knnBeta: {
           vector: queryEmbedding,
           path: "embedding",
@@ -132,6 +154,7 @@ async function searchMongo(queryEmbedding) {
   const results = await collection.aggregate(pipelineAgg).toArray();
   return results;
 }
+
 
 /**
  * POST /chat endpoint.
@@ -178,6 +201,8 @@ app.post("/chat", async (req, res) => {
     return res.status(500).json({ error: "Something went wrong." });
   }
 });
+
+app.use('/api/v1/users', userRoutes);
 
 /**
  * Initialize the model and database connection, then start the server.
