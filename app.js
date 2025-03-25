@@ -1,14 +1,18 @@
-import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
-import axios from 'axios';
-import mongoose from 'mongoose';
-import { pipeline } from '@xenova/transformers';
-import userRoutes from './routes/userRoutes.js';
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import axios from "axios";
+import mongoose from "mongoose";
+import userRoutes from "./routes/userRoutes.js";
+import LegalBot from "./models/LegalBot.js";
+import cookieParser from 'cookie-parser';
+
+
 
 const app = express();
 app.use(express.json());
 app.use(cors());
+app.use(cookieParser());
 
 const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -31,8 +35,7 @@ async function connectDB() {
     console.log("Connecting to MongoDB...");
     await mongoose.connect(process.env.MONGODB_URI, {
       dbName: process.env.DB_NAME, // Use dbName here instead of separate MongoClient
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
+      
     });
     console.log("Connected to MongoDB.");
   } catch (error) {
@@ -47,22 +50,25 @@ async function connectDB() {
 async function getEmbedding(text) {
   try {
     const response = await axios.post(
-      'https://api.openai.com/v1/embeddings',
+      "https://api.openai.com/v1/embeddings",
       {
         input: text,
-        model: 'text-embedding-ada-002'
+        model: "text-embedding-ada-002",
       },
       {
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${OPENAI_API_KEY}`
-        }
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
       }
     );
     // Return the first embedding vector from the response.
     return response.data.data[0].embedding;
   } catch (error) {
-    console.error("Error generating embedding:", error.response ? error.response.data : error.message);
+    console.error(
+      "Error generating embedding:",
+      error.response ? error.response.data : error.message
+    );
     throw error;
   }
 }
@@ -77,18 +83,21 @@ async function callGPT4(messages) {
       {
         messages,
         max_tokens: 2000,
-        temperature: 0.5
+        temperature: 0.5,
       },
       {
         headers: {
           "Content-Type": "application/json",
-          "api-key": AZURE_API_KEY
-        }
+          "api-key": AZURE_API_KEY,
+        },
       }
     );
     return response.data.choices[0].message.content;
   } catch (error) {
-    console.error("Error calling GPT‑4:", error.response ? error.response.data : error.message);
+    console.error(
+      "Error calling GPT‑4:",
+      error.response ? error.response.data : error.message
+    );
     return "Error calling GPT‑4 API.";
   }
 }
@@ -96,33 +105,41 @@ async function callGPT4(messages) {
 /**
  * Perform a vector search in MongoDB using Atlas Search's $search stage.
  */
-async function searchMongo(queryEmbedding) {
-  const collection = mongoose.connection.db.collection(process.env.COLLECTION_NAME);
+export async function searchMongo(queryEmbedding) {
+  try {
 
-  const pipelineAgg = [
-    {
-      $search: {
-        index: process.env.SEARCH_INDEX_NAME,
-        knnBeta: {
-          vector: queryEmbedding,
-          path: "embedding",
-          k: 3
+    const aggPipeline = [
+      {
+        $vectorSearch: {
+          index: 'vector_index',
+          path: 'embedding',
+          queryVector: queryEmbedding,
+          numCandidates: 150,
+          limit: 10
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          sentence_chunk: 1,
+          score: { $meta: 'vectorSearchScore' }
         }
       }
-    },
-    {
-      $project: {
-        sentence_chunk: 1,
-        score: { $meta: "searchScore" }
-      }
-    }
-  ];
+    ];
 
-  const results = await collection.aggregate(pipelineAgg).toArray();
-  return results;
+    // Execute the aggregation with Mongoose
+    const result = await LegalBot.aggregate(aggPipeline);
+
+    // Log or return the results
+    console.log('Search results:');
+    result.forEach(doc => console.dir(JSON.stringify(doc, null, 2)));
+
+    return result;
+  } catch (error) {
+    console.error('Error during search:', error);
+    throw error;
+  }
 }
-
-
 /**
  * POST /chat endpoint.
  * Expects JSON like:
@@ -140,11 +157,15 @@ app.post("/chat", async (req, res) => {
 
     // Perform vector search in MongoDB.
     const searchResults = await searchMongo(queryEmbedding);
-    const legalContext = searchResults.map(doc => doc.sentence_chunk).join("\n\n");
+    const legalContext = searchResults
+      .map((doc) => doc.sentence_chunk)
+      .join("\n\n");
 
     // Debug: Print the legal context to the console.
     if (!legalContext.trim()) {
-      console.log("No legal context found. Check if your DB contains documents with 'sentence_chunk'.");
+      console.log(
+        "No legal context found. Check if your DB contains documents with 'sentence_chunk'."
+      );
     } else {
       console.log("Legal Context:\n", legalContext);
     }
@@ -154,17 +175,17 @@ app.post("/chat", async (req, res) => {
       {
         role: "system",
         content:
-          "You are a helpful legal assistant specialized in consumer rights. Use the provided legal context to answer the user's question."
+          "You are a helpful legal assistant specialized in consumer rights. Use the provided legal context to answer the user's question.",
       },
       {
         role: "system",
-        content: `Legal Context:\n${legalContext}`
+        content: `Legal Context:\n${legalContext}`,
       },
       ...history,
       {
         role: "user",
-        content: question
-      }
+        content: question,
+      },
     ];
 
     // Call the Azure GPT‑4 API.
@@ -176,7 +197,7 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-app.use('/api/v1/users', userRoutes);
+app.use("/api/v1/users", userRoutes);
 
 /**
  * Initialize the database connection, then start the server.
