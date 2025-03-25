@@ -3,7 +3,6 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import { MongoClient } from 'mongodb';
-import { pipeline } from '@xenova/transformers';
 
 const app = express();
 app.use(express.json());
@@ -15,27 +14,13 @@ const DB_NAME = process.env.DB_NAME;
 const COLLECTION_NAME = process.env.COLLECTION_NAME;
 const SEARCH_INDEX_NAME = process.env.SEARCH_INDEX_NAME;
 
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const AZURE_API_KEY = process.env.AZURE_API_KEY;
 const GPT4_ENDPOINT = process.env.GPT4_ENDPOINT;
 
-// Global variables for the model and MongoDB client.
-let featureExtractionPipeline = null;
+// Global variable for the MongoDB client.
 let mongoClient = null;
 
-/**
- * Load the feature extraction pipeline once, when the server starts.
- * Here, we switch to a lighter model that supports quantization.
- */
-async function loadModel() {
-    console.log("Loading the feature extraction model (Alibaba-NLP/gte-base-en-v1.5)...");
-    featureExtractionPipeline = await pipeline(
-      "feature-extraction",
-      "Alibaba-NLP/gte-base-en-v1.5",
-      { quantized: false } // You can adjust this flag if a quantized version becomes available
-    );
-    console.log("Model loaded.");
-  }
-  
 /**
  * Connect to the MongoDB database and assign the global client.
  */
@@ -47,34 +32,29 @@ async function connectDB() {
 }
 
 /**
- * Average pool token embeddings to create a single embedding vector.
- */
-function averagePool(embeddings) {
-  const tokenCount = embeddings.length;
-  const dim = embeddings[0].length;
-  const avg = new Array(dim).fill(0);
-  for (const tokenEmb of embeddings) {
-    for (let i = 0; i < dim; i++) {
-      avg[i] += tokenEmb[i];
-    }
-  }
-  for (let i = 0; i < dim; i++) {
-    avg[i] /= tokenCount;
-  }
-  return avg;
-}
-
-/**
- * Get an embedding for a given text using the in-memory model.
+ * Get an embedding for a given text using the OpenAI Embeddings API.
  */
 async function getEmbedding(text) {
-  // 'featureExtractionPipeline' is loaded once at startup.
-  const output = await featureExtractionPipeline(text);
-  // For sentence-transformers, pool token embeddings into a single vector:
-  if (Array.isArray(output) && Array.isArray(output[0])) {
-    return averagePool(output);
+  try {
+    const response = await axios.post(
+      'https://api.openai.com/v1/embeddings',
+      {
+        input: text,
+        model: 'text-embedding-ada-002'
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${OPENAI_API_KEY}`
+        }
+      }
+    );
+    // Return the first embedding vector from the response.
+    return response.data.data[0].embedding;
+  } catch (error) {
+    console.error("Error generating embedding:", error.response ? error.response.data : error.message);
+    throw error;
   }
-  return output;
 }
 
 /**
@@ -145,12 +125,19 @@ app.post("/chat", async (req, res) => {
   }
 
   try {
-    // Generate an embedding for the user's question using the in-memory pipeline.
+    // Generate an embedding for the user's question using the OpenAI API.
     const queryEmbedding = await getEmbedding(question);
 
     // Perform vector search in MongoDB.
     const searchResults = await searchMongo(queryEmbedding);
     const legalContext = searchResults.map(doc => doc.sentence_chunk).join("\n\n");
+
+    // Debug: Print the legal context to the console.
+    if (!legalContext.trim()) {
+      console.log("No legal context found. Check if your DB contains documents with 'sentence_chunk'.");
+    } else {
+      console.log("Legal Context:\n", legalContext);
+    }
 
     // Build conversation messages for GPT‑4.
     const messages = [
@@ -180,11 +167,10 @@ app.post("/chat", async (req, res) => {
 });
 
 /**
- * Initialize the model and database connection, then start the server.
+ * Initialize the database connection, then start the server.
  */
 async function startServer() {
   try {
-    await loadModel();
     await connectDB();
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
