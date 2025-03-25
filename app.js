@@ -11,7 +11,10 @@ import cookieParser from 'cookie-parser';
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+  origin: true, // Allows requests from any origin
+  credentials: true // Allows cookies to be sent
+}));
 app.use(cookieParser());
 
 const PORT = process.env.PORT || 5000;
