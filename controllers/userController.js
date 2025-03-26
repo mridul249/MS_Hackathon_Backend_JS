@@ -358,3 +358,20 @@ export const newChat = async (req, res) => {
         return errorResponse(res, "SERVER_ERROR", "Error creating new chat", 500);
     }
 };
+
+export const logout = async (req, res) => {
+    try {
+        res.clearCookie('token', { httpOnly: true });
+
+        await Chat.deleteMany({
+          userId: req.user._id,
+          question: { $exists: true, $size: 0 },
+          answer: { $exists: true, $size: 0 }
+        });
+
+        return successResponse(res, "LOGOUT_SUCCESS", "User logged out successfully", 200);
+    } catch (error) {
+        console.error(error);
+        return errorResponse(res, "SERVER_ERROR", "Internal server error", 500);
+    }
+};
