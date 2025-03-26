@@ -14,7 +14,7 @@ import authMiddleware from "./middlewares/authMiddleware.js";
 const app = express();
 app.use(express.json());
 app.use(cors({
-  origin: 'http://localhost:5173', // Allows requests from any origin
+  origin: ['http://localhost:5173', 'https://legalbotiitp.netlify.app'], // Allows requests from specified origins
   credentials: true // Allows cookies to be sent
 }));
 app.use(cookieParser());
