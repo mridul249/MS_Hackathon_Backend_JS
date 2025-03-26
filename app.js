@@ -126,7 +126,7 @@ export async function searchMongo(queryEmbedding) {
           path: 'embedding',
           queryVector: queryEmbedding,
           numCandidates: 150,
-          limit: 10
+          limit: 1
         }
       },
       {
