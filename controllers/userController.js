@@ -199,8 +199,11 @@ export const signup = async (req, res) => {
   
           // Set token in an HTTP-only cookie (Secure, SameSite=strict to prevent CSRF attacks)
           res.cookie('token', token, {
-              httpOnly: true,
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production', // ensure cookie is only sent over HTTPS in production
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
           });
+          
   
           return successResponse(res, "LOGIN_SUCCESS", { 
               user: {
@@ -356,5 +359,22 @@ export const newChat = async (req, res) => {
     } catch (error) {
         console.error(error);
         return errorResponse(res, "SERVER_ERROR", "Error creating new chat", 500);
+    }
+};
+
+export const logout = async (req, res) => {
+    try {
+        res.clearCookie('token', { httpOnly: true });
+
+        await Chat.deleteMany({
+          userId: req.user._id,
+          question: { $exists: true, $size: 0 },
+          answer: { $exists: true, $size: 0 }
+        });
+
+        return successResponse(res, "LOGOUT_SUCCESS", "User logged out successfully", 200);
+    } catch (error) {
+        console.error(error);
+        return errorResponse(res, "SERVER_ERROR", "Internal server error", 500);
     }
 };

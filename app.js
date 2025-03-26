@@ -18,7 +18,11 @@ app.use(cors({
   credentials: true // Allows cookies to be sent
 }));
 app.use(cookieParser());
-// app.set("trust proxy", 1);
+
+// In your main server file
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
 
 
 const PORT = process.env.PORT || 5000;
