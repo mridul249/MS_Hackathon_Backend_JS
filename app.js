@@ -16,6 +16,8 @@ app.use(cors({
   credentials: true // Allows cookies to be sent
 }));
 app.use(cookieParser());
+app.set("trust proxy", 1);
+
 
 const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI;
