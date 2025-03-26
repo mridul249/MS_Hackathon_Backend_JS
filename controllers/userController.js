@@ -200,9 +200,6 @@ export const signup = async (req, res) => {
           // Set token in an HTTP-only cookie (Secure, SameSite=strict to prevent CSRF attacks)
           res.cookie('token', token, {
               httpOnly: true,
-              secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-              sameSite: 'strict',
-              maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
           });
   
           return successResponse(res, "LOGIN_SUCCESS", { 
