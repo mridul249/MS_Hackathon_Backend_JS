@@ -6,6 +6,8 @@ import mongoose from "mongoose";
 import userRoutes from "./routes/userRoutes.js";
 import LegalBot from "./models/LegalBot.js";
 import cookieParser from 'cookie-parser';
+import Chat from "./models/Chat.js";
+import authMiddleware from "./middlewares/authMiddleware.js";
 
 
 
@@ -16,7 +18,7 @@ app.use(cors({
   credentials: true // Allows cookies to be sent
 }));
 app.use(cookieParser());
-app.set("trust proxy", 1);
+// app.set("trust proxy", 1);
 
 
 const PORT = process.env.PORT || 5000;
@@ -150,8 +152,9 @@ export async function searchMongo(queryEmbedding) {
  * Expects JSON like:
  * { "question": "Your question", "history": [ { role: "user"|"assistant", content: "..." } ] }
  */
-app.post("/chat", async (req, res) => {
+app.post("/chat/:chatId",authMiddleware, async (req, res) => {
   const { question, history = [] } = req.body;
+  const chatId = req.params.chatId;
   if (!question) {
     return res.status(400).json({ error: "No question provided." });
   }
@@ -195,6 +198,15 @@ app.post("/chat", async (req, res) => {
 
     // Call the Azure GPT‑4 API.
     const answer = await callGPT4(messages);
+
+
+
+    await Chat.findOneAndUpdate(
+      { _id: chatId, userId: req.user._id },
+      { $push: { question: question, answer: answer } },
+      { upsert: true, new: true }
+    );
+
     return res.json({ answer });
   } catch (error) {
     console.error("Error in /chat:", error);
@@ -202,6 +214,32 @@ app.post("/chat", async (req, res) => {
   }
 });
 
+
+app.get("/chat/:chatId",authMiddleware, async (req, res) => {
+
+  try {
+    const chatId = req.params.chatId;
+    const userId = req.user._id;
+
+    // Retrieve the specific chat by chatId and userId
+    const chat = await Chat.findOne({ _id: chatId, userId });
+    if (!chat) {
+      return res.status(404).json({ error: "Chat not found." });
+    }
+
+    // Retrieve all chat IDs for the current user
+    const chats = await Chat.find({ userId }).select("_id");
+
+    res.json({
+      chat: { question: chat.question, answer: chat.answer },
+      chatIds: chats.map(c => c._id)
+    });
+  } catch (error) {
+    console.error("Error in GET /chat:", error);
+    res.status(500).json({ error: "Something went wrong." });
+  }
+
+});
 app.use("/api/v1/users", userRoutes);
 
 /**
